@@ -2,15 +2,26 @@ import sys
 import os
 import time
 import subprocess
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtGui import QPixmap, QImage, QTextCursor
 from PySide6.QtCore import QTimer, Qt, QThread, Signal, QObject
 import uiautomator2 as u2
 import warnings
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QLineEdit, QPushButton, QFormLayout, QSpinBox
+    QLabel, QLineEdit, QPushButton, QFormLayout, QSpinBox, QTextEdit
 )
+
+class OutputRedirector(QObject):
+    """重定向print()輸出到QTextEdit的類"""
+    output_signal = Signal(str)
+    
+    def write(self, text):
+        if text.strip():  # 只有非空白內容才發送信號
+            self.output_signal.emit(text)
+    
+    def flush(self):
+        pass
 
 class ScreenCaptureWorker(QObject):
     """
@@ -96,6 +107,7 @@ class AndroidScriptTester(QWidget):
         self.current_pixmap = None
         self.init_ui()
         self.setup_screen_capture_thread()
+        self.setup_output_redirection()
 
     def init_ui(self):
         """初始化使用者介面"""
@@ -127,17 +139,38 @@ class AndroidScriptTester(QWidget):
         self.stop_button = QPushButton("停止腳本")
         self.reconnect_button = QPushButton("重新連結模擬器")
         self.screenshot_button = QPushButton("截圖")
+        self.clear_terminal_button = QPushButton("清除終端")
 
         layout.addLayout(form_layout)
         layout.addWidget(self.start_button)
         layout.addWidget(self.stop_button)
         layout.addWidget(self.reconnect_button)
         layout.addWidget(self.screenshot_button)
+        layout.addWidget(self.clear_terminal_button)
+        
+        # 添加終端機輸出區域
+        terminal_label = QLabel("終端機輸出:")
+        layout.addWidget(terminal_label)
+        
+        self.terminal_output = QTextEdit()
+        self.terminal_output.setReadOnly(True)
+        self.terminal_output.setMaximumHeight(200)
+        self.terminal_output.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 10pt;
+                border: 1px solid #444444;
+            }
+        """)
+        layout.addWidget(self.terminal_output)
         
         self.start_button.clicked.connect(self.start_script)
         self.stop_button.clicked.connect(self.stop_script)
         self.reconnect_button.clicked.connect(self.reconnect_device)
         self.screenshot_button.clicked.connect(self.take_screenshot)
+        self.clear_terminal_button.clicked.connect(self.clear_terminal)
 
         return panel
 
@@ -237,11 +270,36 @@ class AndroidScriptTester(QWidget):
         except Exception as e:
             print(f"無法終止 ADB 服務: {e}")
 
+    def setup_output_redirection(self):
+        """設定print()輸出重定向到終端機區域"""
+        self.output_redirector = OutputRedirector()
+        self.output_redirector.output_signal.connect(self.append_to_terminal)
+        
+        # 保存原始的stdout以便需要時恢復
+        self.original_stdout = sys.stdout
+        sys.stdout = self.output_redirector
+
+    def append_to_terminal(self, text):
+        """將文字添加到終端機輸出區域"""
+        self.terminal_output.append(text.rstrip())
+        # 自動滾動到底部
+        cursor = self.terminal_output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.terminal_output.setTextCursor(cursor)
+
+    def clear_terminal(self):
+        """清除終端機輸出內容"""
+        self.terminal_output.clear()
+
     def closeEvent(self, event):
-        """關閉視窗時停止計時器和執行緒"""
+        """關閉視窗時停止計時器和執行緒，並恢復stdout"""
         self.timer.stop()
         self.capture_thread.quit()
         self.capture_thread.wait() # 等待執行緒完全結束
+        
+        # 恢復原始的stdout
+        sys.stdout = self.original_stdout
+        
         event.accept()
 
 if __name__ == '__main__':
