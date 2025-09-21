@@ -1,0 +1,25 @@
+# Uma Assistant 依賴包列表
+# 基礎 GUI 框架
+PySide6>=6.5.0
+
+# Android 設備控制
+uiautomator2>=2.16.0
+
+# 圖像處理
+opencv-python>=4.8.0
+Pillow>=10.0.0
+
+# OCR 文字識別
+easyocr>=1.7.0
+# 或者使用 ddddocr (更適合中文)
+# ddddocr>=1.4.7
+
+# ONNX 運行時（用於機器學習模型）
+onnxruntime>=1.16.0
+
+# 資料庫
+sqlite3  # Python 內建，不需要額外安裝
+
+# 其他工具
+numpy>=1.24.0
+requests>=2.31.0
